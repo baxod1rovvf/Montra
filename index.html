@@ -92,6 +92,7 @@ nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area
 .qk{font-size:13px;padding:6px 12px}
 input[type=date]{min-height:48px}
 .code{font:800 44px 'Bricolage Grotesque',sans-serif;text-align:center;letter-spacing:.08em;margin:14px 0 4px;font-variant-numeric:tabular-nums}
+.err{background:#FFE3EA;color:#7a0b2b;border-radius:12px;padding:10px 12px;margin:6px 0 12px;font-size:14px;font-weight:500;overflow-wrap:anywhere}
 .codein{letter-spacing:.3em;font-weight:700;text-align:center}
 .gimg{width:76px;height:110px;flex:none;object-fit:cover;border-radius:12px 12px 26px 26px;border:3px solid var(--line);background:var(--bg)}
 .gbar{position:relative;height:30px;border-radius:99px;background:var(--bg);border:2px solid var(--line);overflow:hidden;margin:8px 0 10px}
@@ -215,7 +216,7 @@ return '<div class="card" data-i="'+i+'"><div class="row" style="gap:16px">'+(g.
 var V={home:home,money:money,budgets:budgets,goals:goals};
 /* sync: set these two values from your Supabase project (see supabase/SETUP.md) */
 var SB_URL='https://fcmehutqoavuewgrfkqb.supabase.co',SB_KEY='sb_publishable_HbvoHp-pKYmvWhJZAtU6Eg_Ipo-irHi';
-var SY=null,snap=null,lastSent=null,syncBusy=false,syncAgain=false,syncErr='',syncT=0,PAIR=null,ENTER=false,pendR=false;
+var SY=null,snap=null,lastSent=null,syncBusy=false,syncAgain=false,syncErr='',syncT=0,PAIR=null,ENTER=false,pendR=false,linkErr='';
 try{SY=JSON.parse(localStorage.getItem('montra-sync'))}catch(e){}
 function storeSY(){try{if(SY)localStorage.setItem('montra-sync',JSON.stringify(SY));else localStorage.removeItem('montra-sync')}catch(e){}}
 function b64(u){var s='';for(var i=0;i<u.length;i+=32768)s+=String.fromCharCode.apply(null,u.subarray(i,i+32768));return btoa(s)}
@@ -226,6 +227,7 @@ function aes(raw){return crypto.subtle.importKey('raw',raw,'AES-GCM',false,['enc
 async function enc(raw,str){var iv=rnd(12),c=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},await aes(raw),new TextEncoder().encode(str))),o=new Uint8Array(12+c.length);o.set(iv);o.set(c,12);return b64(o)}
 async function dec(raw,str){var u=unb64(str);return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},await aes(raw),u.slice(12)))}
 async function codeKey(code){var k=await crypto.subtle.importKey('raw',new TextEncoder().encode(code),'PBKDF2',false,['deriveBits']);return new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt:new TextEncoder().encode('montra-pair-v1'),iterations:200000,hash:'SHA-256'},k,256))}
+function why(e){var m=e&&e.message||String(e);return /Failed to fetch|NetworkError|Load failed/i.test(m)?'Could not reach Supabase. Check your internet, or turn off ad blockers for this site.':m}
 async function rpc(fn,args){var r=await fetch(SB_URL+'/rest/v1/rpc/'+fn,{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_KEY},body:JSON.stringify(args)}),j=null;try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j&&j.message||'HTTP '+r.status);return j}
 function stable(v){if(Array.isArray(v))return '['+v.map(stable).join(',')+']';if(v&&typeof v=='object')return '{'+Object.keys(v).filter(function(k){return k!='edit'&&k!='confirm'&&v[k]!==undefined}).sort().map(function(k){return JSON.stringify(k)+':'+stable(v[k])}).join(',')+'}';return JSON.stringify(v===undefined?null:v)}
 function canon(o){var s=function(l){return l.slice().sort(function(a,b){return a.id<b.id?-1:1})};return stable({L:s(o.L),goals:s(o.goals),rec:s(o.rec),del:o.del,xp:o.xp,cur:o.cur,start:o.start,cats:o.cats,lim:o.lim,su:o.su})}
@@ -252,21 +254,21 @@ function softRender(){var a=document.activeElement;if(a&&/INPUT|SELECT|TEXTAREA/
 function ago(t){var s=(Date.now()-t)/1000;return s<60?'just now':s<3600?Math.floor(s/60)+' min ago':s<86400?Math.floor(s/3600)+' h ago':dt(t)}
 function syncText(){return syncErr?'⚠️ '+syncErr+'. Montra will try again.':SY.at?'✓ Synced '+ago(SY.at):'Syncing…'}
 function pairLeft(){var s=Math.max(0,Math.round((PAIR.exp-Date.now())/1000));return 'Expires in '+Math.floor(s/60)+':'+pad(s%60)}
-async function linkStart(){try{if(!SY){var v=hex(rnd(16)),t=hex(rnd(32));if(!await rpc('montra_vault_create',{p_vault:v,p_token:t}))throw new Error('please try again');if(!S.su)S.su=Date.now();SY={v:v,t:t,k:b64(rnd(32)),ver:0,at:0};storeSY();lastSent=null;await syncNow()}
+async function linkStart(){linkErr='';try{if(!SY){var v=hex(rnd(16)),t=hex(rnd(32));if(!await rpc('montra_vault_create',{p_vault:v,p_token:t}))throw new Error('please try again');if(!S.su)S.su=Date.now();SY={v:v,t:t,k:b64(rnd(32)),ver:0,at:0};storeSY();lastSent=null;await syncNow()}
 var payload=JSON.stringify({v:SY.v,t:SY.t,k:SY.k});
 for(var i=0;i<5;i++){var code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1e6).padStart(6,'0');
 if(await rpc('montra_pair_create',{p_vault:SY.v,p_token:SY.t,p_code:code,p_payload:await enc(await codeKey(code),payload)})){PAIR={code:code,exp:Date.now()+6e5};render();pairWatch();return}}
-throw new Error('please try again')}catch(e){toast('Could not start linking: '+e.message);if(tab=='home')render()}}
+throw new Error('please try again')}catch(e){console.error('link',e);linkErr='Could not start linking: '+why(e);toast(linkErr);if(tab=='home')render()}}
 function pairWatch(){clearInterval(pairWatch.h);var n=0;pairWatch.h=setInterval(async function(){if(!PAIR){clearInterval(pairWatch.h);return}
 if(Date.now()>PAIR.exp){PAIR=null;clearInterval(pairWatch.h);toast('The code expired');if(tab=='home')softRender();return}
 var el=$('#pairleft');if(el)el.textContent=pairLeft();
 if(++n%4==0){try{if(!await rpc('montra_pair_status',{p_vault:SY.v,p_token:SY.t})&&PAIR){PAIR=null;clearInterval(pairWatch.h);chime();toast('New device linked');syncNow();if(tab=='home')softRender()}}catch(e){}}},1000)}
-async function linkClaim(code){if(!/^\d{6}$/.test(code)){toast('Type the 6-digit code');return}toast('Checking code…');
+async function linkClaim(code){linkErr='';if(!/^\d{6}$/.test(code)){toast('Type the 6-digit code');return}toast('Checking code…');
 try{var p=await rpc('montra_pair_claim',{p_code:code});if(!p){toast('Wrong or expired code');return}var j=JSON.parse(await dec(await codeKey(code),p));
 if((S.L.length||S.goals.length)&&!confirm('This device already has data. OK = keep it and combine it with your synced data. Cancel = replace it with your synced data.')){S.L=[];S.goals=[];S.rec=[];S.del={};S.su=0;S.xp=0;track(false)}
 SY={v:j.v,t:j.t,k:j.k,ver:0,at:0};storeSY();ENTER=false;lastSent=null;render();await syncNow();if(!syncErr){chime();toast('Linked! Your data is synced')}}
-catch(e){toast(e.message=='rate_limited'?'Too many wrong codes. Try again in 15 minutes':'Could not link: '+e.message)}}
-function syncCard(){if(!SB_URL)return '';var h='<section class="card"><h3 style="font-size:18px;margin-bottom:6px">Sync devices</h3>';
+catch(e){console.error('claim',e);linkErr=e.message=='rate_limited'?'Too many wrong codes. Try again in 15 minutes':'Could not link: '+why(e);toast(linkErr);if(tab=='home'){render();var x=$('#sc');if(x)x.value=code}}}
+function syncCard(){if(!SB_URL)return '';var h='<section class="card"><h3 style="font-size:18px;margin-bottom:6px">Sync devices</h3>'+(linkErr?'<div class="err" role="alert">⚠️ '+esc(linkErr)+'</div>':'');
 if(PAIR)return h+'<div class="muted">On your other device, open Montra, tap <b>I have a code</b> and type:</div><div class="code">'+PAIR.code.slice(0,3)+' '+PAIR.code.slice(3)+'</div><div class="muted" id="pairleft" style="text-align:center;margin-bottom:12px">'+pairLeft()+'</div><button class="btn ghost sm" data-act="paircancel">Cancel</button></section>';
 if(ENTER)return h+'<div class="muted" style="margin-bottom:10px">Type the 6-digit code shown on your other device.</div><div class="add" style="margin:0"><input id="sc" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" aria-label="Sync code" class="codein"><button class="btn blue" data-act="claim">Connect</button></div><button class="btn ghost sm" data-act="entercancel" style="margin-top:12px">Cancel</button></section>';
 if(!SY)return h+'<div class="muted" style="margin-bottom:12px">Use the same data on your phone and computer. It is encrypted on this device before it is uploaded.</div><div class="row" style="gap:10px;flex-wrap:wrap"><button class="btn blue sm" data-act="link">Link a new device</button><button class="btn ghost sm" data-act="enter">I have a code</button></div></section>';
